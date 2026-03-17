@@ -118,29 +118,30 @@ export async function getStudentProgressInClassroom(classroomId: string, student
   });
   if (!classroom) return null;
 
-  // Student profile
-  const student = await prisma.profile.findUnique({
-    where: { id: studentId },
-    select: { id: true, displayName: true, totalXP: true, streak: true },
-  });
-  if (!student) return null;
-
-  // All sessions with their assignments + student's submissions
-  const sessions = await prisma.session.findMany({
-    where: { classroomId },
-    include: {
-      assignments: {
-        include: {
-          submissions: {
-            where: { studentId },
-            select: { id: true, score: true, status: true, submittedAt: true, teacherNote: true },
+  // Fetch student profile and sessions in parallel
+  const [student, sessions] = await Promise.all([
+    prisma.profile.findUnique({
+      where: { id: studentId },
+      select: { id: true, displayName: true, totalXP: true, streak: true },
+    }),
+    prisma.session.findMany({
+      where: { classroomId },
+      include: {
+        assignments: {
+          include: {
+            submissions: {
+              where: { studentId },
+              select: { id: true, score: true, status: true, submittedAt: true, teacherNote: true },
+            },
           },
+          orderBy: { createdAt: "asc" },
         },
-        orderBy: { createdAt: "asc" },
       },
-    },
-    orderBy: [{ scheduledAt: "desc" }, { createdAt: "desc" }],
-  });
+      orderBy: [{ scheduledAt: "desc" }, { createdAt: "desc" }],
+    }),
+  ]);
+
+  if (!student) return null;
 
   return { classroom, student, sessions };
 }

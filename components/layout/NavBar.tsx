@@ -1,15 +1,14 @@
 "use client";
 
 /**
- * NavBar — Role-aware bottom navigation
+ * NavBar — Role-aware bottom navigation (Client Component).
+ * Receives `role` as a prop from the Server Component wrapper in layout.tsx.
  * Teacher: Home | Classroom | Quiz | Profile
  * Student: Home | Learn | My Classes | Quiz | Profile
  */
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { getProfile } from "@/app/actions/auth";
 import { Home, BookOpen, Zap, User, School, ClipboardList } from "lucide-react";
 
 const studentNav = [
@@ -27,17 +26,9 @@ const teacherNav = [
   { href: "/profile", label: "Hồ sơ", icon: User },
 ];
 
-export default function NavBar() {
+export default function NavBar({ role }: { role: "STUDENT" | "TEACHER" | null }) {
   const pathname = usePathname();
-  const [role, setRole] = useState<"STUDENT" | "TEACHER">("STUDENT");
 
-  useEffect(() => {
-    getProfile().then((p) => {
-      if (p) setRole(p.role);
-    });
-  }, []);
-
-  // Hide NavBar on auth pages
   if (pathname.startsWith("/auth")) return null;
 
   const navItems = role === "TEACHER" ? teacherNav : studentNav;
