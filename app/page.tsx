@@ -36,13 +36,18 @@ export default function HomePage() {
   const [role, setRole] = useState<"STUDENT" | "TEACHER" | null>(null);
   const [displayName, setDisplayName] = useState("");
 
+  const router = useRouter();
+
   useEffect(() => {
     getProfile().then((p) => {
-      if (!p) return;
+      if (!p) {
+        router.replace("/auth/login");
+        return;
+      }
       setRole(p.role);
       setDisplayName(p.displayName ?? "");
     });
-  }, []);
+  }, [router]);
 
   if (role === null) return <HomeLoader />;
 
