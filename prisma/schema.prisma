@@ -1,0 +1,178 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// Datasource URLs are configured in prisma.config.ts (Prisma v7+)
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// AUTH & IDENTITY
+// ==========================================
+
+enum Role {
+  STUDENT
+  TEACHER
+}
+
+model Profile {
+  id          String   @id // Matches Supabase auth.users.id (UUID)
+  role        Role     @default(STUDENT)
+  displayName String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Learning progress (migrated from localStorage)
+  totalXP          Int      @default(0)
+  streak           Int      @default(1)
+  lastActiveDate   String   @default("")
+  completedLessons String[] @default([])
+
+  // Relations
+  enrollments         Enrollment[]
+  submissions         Submission[]
+  customQuizDecks     CustomQuizDeck[]
+  customFlashDecks    CustomFlashcardDeck[]
+  taughtClassrooms    Classroom[]         @relation("TeacherClassrooms")
+}
+
+// ==========================================
+// CLASSROOM MANAGEMENT
+// ==========================================
+
+model Classroom {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  inviteCode  String   @unique
+  teacherId   String
+  isActive    Boolean  @default(true)
+  meetLink    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  teacher     Profile     @relation("TeacherClassrooms", fields: [teacherId], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+  sessions    Session[]
+}
+
+model Enrollment {
+  id          String   @id @default(cuid())
+  studentId   String
+  classroomId String
+  joinedAt    DateTime @default(now())
+
+  student   Profile   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classroom Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, classroomId])
+}
+
+// ==========================================
+// SESSIONS & ASSIGNMENTS
+// ==========================================
+
+enum SessionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+model Session {
+  id          String        @id @default(cuid())
+  classroomId String
+  title       String
+  description String?
+  scheduledAt DateTime?
+  status      SessionStatus @default(DRAFT)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  classroom   Classroom    @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  assignments Assignment[]
+}
+
+enum AssignmentType {
+  QUIZ          // Multiple choice quiz
+  FLASHCARD     // Flashcard review
+  KANA_PRACTICE // Kana identification
+  FREE_WRITE    // Open-ended written answer (teacher grades)
+}
+
+model Assignment {
+  id          String         @id @default(cuid())
+  sessionId   String
+  type        AssignmentType
+  title       String
+  description String?
+  // Stores quiz questions / flashcard cards / kana groups as JSON
+  contentRef  Json
+  dueAt       DateTime?
+  maxScore    Int            @default(100)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  session     Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  submissions Submission[]
+}
+
+// ==========================================
+// SUBMISSIONS & GRADING
+// ==========================================
+
+enum SubmissionStatus {
+  SUBMITTED
+  GRADED
+  RETURNED
+}
+
+model Submission {
+  id           String           @id @default(cuid())
+  assignmentId String
+  studentId    String
+  // Stores answers as JSON (e.g. [{questionId, chosen, correct}])
+  answers      Json
+  score        Float?           // null = not graded yet (for FREE_WRITE)
+  status       SubmissionStatus @default(SUBMITTED)
+  teacherNote  String?
+  submittedAt  DateTime         @default(now())
+  gradedAt     DateTime?
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student    Profile    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, studentId])
+}
+
+// ==========================================
+// CUSTOM CONTENT (migrated from localStorage)
+// ==========================================
+
+model CustomQuizDeck {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  // JSON array of { id, prompt, answer }
+  cards     Json
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner Profile @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model CustomFlashcardDeck {
+  id        String   @id @default(cuid())
+  ownerId   String
+  name      String
+  // JSON array of { id, front, back, reading? }
+  cards     Json
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner Profile @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
