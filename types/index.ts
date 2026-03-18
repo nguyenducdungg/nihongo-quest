@@ -52,7 +52,9 @@ export interface CustomQuizDeck {
   id: string;
   name: string;
   cards: CustomQuizCard[];
+  isShared?: boolean;
   createdAt: string;
+  ownerName?: string; // Populated for shared/library decks
 }
 
 // ===== Custom Flashcard =====
@@ -67,5 +69,7 @@ export interface CustomFlashcardDeck {
   id: string;
   name: string;
   cards: CustomFlashcard[];
+  isShared?: boolean;
   createdAt: string;
+  ownerName?: string; // Populated for shared/library decks
 }

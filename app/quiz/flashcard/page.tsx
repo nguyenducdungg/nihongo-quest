@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * Custom Flashcard page — Create, manage and study user-defined flashcard decks
- * Deck list → Create/Edit deck → Study mode with flip-card + progress
+ * Custom Flashcard page
+ * "Của tôi" tab: personal decks (create / edit / delete / share toggle)
+ * "Thư viện" tab: shared decks by teachers & others (study only)
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft,
+  ChevronRight as Next,
   Plus,
   Trash2,
   BookOpen,
@@ -17,25 +19,64 @@ import {
   X,
   Check,
   RotateCcw,
-  ChevronRight as Next,
+  Globe,
+  Lock,
+  Library,
+  User,
 } from "lucide-react";
-import { getFlashcardDecks, saveFlashcardDeck, deleteFlashcardDeck } from "@/app/actions/decks";
+import {
+  getFlashcardDecks,
+  saveFlashcardDeck,
+  deleteFlashcardDeck,
+  toggleShareFlashcardDeck,
+  getSharedFlashcardDecks,
+} from "@/app/actions/decks";
 import { generateId } from "@/lib/customData";
 import { CustomFlashcardDeck, CustomFlashcard } from "@/types";
 
 type Screen = "list" | "edit" | "study";
+type Tab = "mine" | "library";
+
+type MyDeck = Awaited<ReturnType<typeof getFlashcardDecks>>[number];
+type SharedDeck = Awaited<ReturnType<typeof getSharedFlashcardDecks>>[number];
+
+function toClientDeck(d: MyDeck): CustomFlashcardDeck {
+  return {
+    id: d.id,
+    name: d.name,
+    cards: d.cards as unknown as CustomFlashcard[],
+    isShared: d.isShared,
+    createdAt: d.createdAt.toISOString(),
+  };
+}
+
+function sharedToClientDeck(d: SharedDeck): CustomFlashcardDeck {
+  return {
+    id: d.id,
+    name: d.name,
+    cards: d.cards as unknown as CustomFlashcard[],
+    isShared: true,
+    createdAt: d.createdAt.toISOString(),
+    ownerName: d.owner?.displayName ?? "Ẩn danh",
+  };
+}
 
 export default function CustomFlashcardPage() {
   const [screen, setScreen] = useState<Screen>("list");
-  const [decks, setDecks] = useState<CustomFlashcardDeck[]>([]);
+  const [tab, setTab] = useState<Tab>("mine");
+  const [myDecks, setMyDecks] = useState<CustomFlashcardDeck[]>([]);
+  const [sharedDecks, setSharedDecks] = useState<CustomFlashcardDeck[]>([]);
   const [activeDeck, setActiveDeck] = useState<CustomFlashcardDeck | null>(null);
+  const [toggling, setToggling] = useState<string | null>(null);
+
+  const refreshDecks = useCallback(() => {
+    getFlashcardDecks().then((d) => setMyDecks(d.map(toClientDeck)));
+    getSharedFlashcardDecks().then((d) => setSharedDecks(d.map(sharedToClientDeck)));
+  }, []);
 
   useEffect(() => {
     refreshDecks();
-  }, []);
-
-  const refreshDecks = () =>
-    getFlashcardDecks().then((d) => setDecks(d as unknown as CustomFlashcardDeck[]));
+  }, [refreshDecks]);
 
   const newDeck = () => {
     setActiveDeck({
@@ -57,6 +98,13 @@ export default function CustomFlashcardPage() {
   };
   const removeDeck = (id: string) => deleteFlashcardDeck(id).then(() => refreshDecks());
 
+  const handleToggleShare = async (deck: CustomFlashcardDeck) => {
+    setToggling(deck.id);
+    await toggleShareFlashcardDeck(deck.id);
+    refreshDecks();
+    setToggling(null);
+  };
+
   if (screen === "study" && activeDeck) {
     return <StudyMode deck={activeDeck} onBack={() => setScreen("list")} />;
   }
@@ -76,8 +124,11 @@ export default function CustomFlashcardPage() {
     );
   }
 
+  const decks = tab === "mine" ? myDecks : sharedDecks;
+
   return (
-    <div className="mx-auto max-w-lg space-y-4 px-4 pt-4">
+    <div className="mx-auto max-w-lg space-y-4 px-4 pt-4 pb-28">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link
@@ -88,66 +139,130 @@ export default function CustomFlashcardPage() {
           </Link>
           <h1 className="font-800 text-xl text-[var(--text-primary)]">Flashcard tự tạo</h1>
         </div>
+        {tab === "mine" && (
+          <button
+            onClick={newDeck}
+            className="font-700 flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-3 py-2 text-sm text-[var(--text-primary)] transition-all hover:scale-[1.02] active:scale-[0.97]"
+          >
+            <Plus size={16} /> Tạo mới
+          </button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 rounded-2xl bg-[var(--cream)] p-1">
         <button
-          onClick={newDeck}
-          className="font-700 flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-3 py-2 text-sm text-[var(--text-primary)] transition-all hover:scale-[1.02] active:scale-[0.97]"
+          onClick={() => setTab("mine")}
+          className={`font-700 flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm transition-all ${tab === "mine" ? "bg-white text-[var(--coral)] shadow-sm" : "text-[var(--text-secondary)]"}`}
         >
-          <Plus size={16} /> Tạo mới
+          <User size={14} /> Của tôi ({myDecks.length})
+        </button>
+        <button
+          onClick={() => setTab("library")}
+          className={`font-700 flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-sm transition-all ${tab === "library" ? "bg-white text-[var(--coral)] shadow-sm" : "text-[var(--text-secondary)]"}`}
+        >
+          <Library size={14} /> Thư viện ({sharedDecks.length})
         </button>
       </div>
 
+      {/* Deck list */}
       {decks.length === 0 ? (
         <div className="space-y-3 py-16 text-center">
-          <p className="text-5xl">🃏</p>
-          <p className="font-800 text-[var(--text-primary)]">Chưa có bộ thẻ nào</p>
-          <p className="font-600 text-sm text-[var(--text-secondary)]">
-            Tạo bộ flashcard đầu tiên của bạn!
+          <p className="text-5xl">{tab === "mine" ? "🃏" : "📚"}</p>
+          <p className="font-800 text-[var(--text-primary)]">
+            {tab === "mine" ? "Chưa có bộ thẻ nào" : "Chưa có bộ thẻ được chia sẻ"}
           </p>
-          <button
-            onClick={newDeck}
-            className="font-700 mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-5 py-2.5 text-[var(--text-primary)] transition-all hover:scale-[1.02]"
-          >
-            <Plus size={16} /> Tạo ngay
-          </button>
+          <p className="font-600 text-sm text-[var(--text-secondary)]">
+            {tab === "mine"
+              ? 'Nhấn "Tạo mới" để bắt đầu!'
+              : "Khi giáo viên chia sẻ bộ flashcard, chúng sẽ xuất hiện ở đây."}
+          </p>
+          {tab === "mine" && (
+            <button
+              onClick={newDeck}
+              className="font-700 mt-2 inline-flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-5 py-2.5 text-[var(--text-primary)] transition-all hover:scale-[1.02]"
+            >
+              <Plus size={16} /> Tạo ngay
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-2.5">
-          {decks.map((deck) => (
-            <motion.div
-              key={deck.id}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex items-center gap-3 rounded-2xl border-2 border-[var(--border)] bg-white p-4"
-            >
-              <div className="min-w-0 flex-1">
-                <p className="font-800 truncate text-[var(--text-primary)]">{deck.name}</p>
-                <p className="font-600 mt-0.5 text-xs text-[var(--text-secondary)]">
-                  {deck.cards.length} thẻ
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  onClick={() => editDeck(deck)}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--border)] transition-colors hover:bg-[var(--coral-light)]"
-                >
-                  <PenLine size={14} className="text-[var(--text-secondary)]" />
-                </button>
-                <button
-                  onClick={() => studyDeck(deck)}
-                  disabled={deck.cards.length === 0}
-                  className="font-700 flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-3 py-2 text-xs text-[var(--text-primary)] transition-all hover:scale-[1.02] active:scale-[0.97] disabled:opacity-40"
-                >
-                  <BookOpen size={13} /> Học
-                </button>
-                <button
-                  onClick={() => removeDeck(deck.id)}
-                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--border)] transition-colors hover:bg-red-100"
-                >
-                  <Trash2 size={14} className="text-red-400" />
-                </button>
-              </div>
-            </motion.div>
-          ))}
+          <AnimatePresence>
+            {decks.map((deck) => (
+              <motion.div
+                key={deck.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                className="rounded-2xl border-2 border-[var(--border)] bg-white p-4"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-800 truncate text-[var(--text-primary)]">{deck.name}</p>
+                    <p className="font-600 mt-0.5 text-xs text-[var(--text-secondary)]">
+                      {deck.cards.length} thẻ
+                      {deck.ownerName && (
+                        <span className="ml-2 text-[var(--coral)]">· by {deck.ownerName}</span>
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2">
+                    {/* Share toggle — only for own decks */}
+                    {tab === "mine" && (
+                      <button
+                        onClick={() => handleToggleShare(deck)}
+                        disabled={toggling === deck.id}
+                        title={
+                          deck.isShared ? "Đang chia sẻ — nhấn để thu hồi" : "Chia sẻ với mọi người"
+                        }
+                        className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                          deck.isShared
+                            ? "bg-green-100 text-green-600"
+                            : "bg-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--mint-light)] hover:text-[var(--mint-dark)]"
+                        }`}
+                      >
+                        {deck.isShared ? <Globe size={14} /> : <Lock size={14} />}
+                      </button>
+                    )}
+
+                    {tab === "mine" && (
+                      <button
+                        onClick={() => editDeck(deck)}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--border)] transition-colors hover:bg-[var(--coral-light)]"
+                      >
+                        <PenLine size={14} className="text-[var(--text-secondary)]" />
+                      </button>
+                    )}
+
+                    <button
+                      onClick={() => studyDeck(deck)}
+                      disabled={deck.cards.length === 0}
+                      className="font-700 flex items-center gap-1.5 rounded-xl bg-[var(--yellow-dark)] px-3 py-2 text-xs text-[var(--text-primary)] transition-all hover:scale-[1.02] active:scale-[0.97] disabled:opacity-40"
+                    >
+                      <BookOpen size={13} /> Học
+                    </button>
+
+                    {tab === "mine" && (
+                      <button
+                        onClick={() => removeDeck(deck.id)}
+                        className="flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--border)] transition-colors hover:bg-red-100"
+                      >
+                        <Trash2 size={14} className="text-red-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {deck.isShared && tab === "mine" && (
+                  <div className="font-700 mt-2 flex items-center gap-1 text-[10px] text-green-600">
+                    <Globe size={10} /> Đang chia sẻ với tất cả mọi người
+                  </div>
+                )}
+              </motion.div>
+            ))}
+          </AnimatePresence>
         </div>
       )}
     </div>
@@ -244,7 +359,6 @@ function StudyMode({ deck, onBack }: { deck: CustomFlashcardDeck; onBack: () => 
         </span>
       </div>
 
-      {/* Progress */}
       <div className="h-2.5 overflow-hidden rounded-full bg-[var(--border)]">
         <motion.div
           className="h-full rounded-full bg-[var(--yellow-dark)]"
@@ -253,7 +367,6 @@ function StudyMode({ deck, onBack }: { deck: CustomFlashcardDeck; onBack: () => 
         />
       </div>
 
-      {/* Flip card */}
       <AnimatePresence mode="wait">
         <motion.div
           key={index}
@@ -302,7 +415,6 @@ function StudyMode({ deck, onBack }: { deck: CustomFlashcardDeck; onBack: () => 
         </motion.div>
       </AnimatePresence>
 
-      {/* Action buttons */}
       <div className="grid grid-cols-3 gap-2">
         <button
           onClick={() => go(-1)}
@@ -377,7 +489,7 @@ function DeckEditor({
   };
 
   return (
-    <div className="mx-auto max-w-lg space-y-4 px-4 pt-4">
+    <div className="mx-auto max-w-lg space-y-4 px-4 pt-4 pb-28">
       <div className="flex items-center gap-3">
         <button
           onClick={onCancel}
