@@ -39,6 +39,40 @@ export async function createAssignment(data: {
   });
 }
 
+export async function updateAssignment(
+  id: string,
+  data: {
+    title?: string;
+    description?: string;
+    dueAt?: string | null;
+    maxScore?: number;
+    contentRef?: object;
+  }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Unauthenticated");
+
+  const a = await prisma.assignment.findUnique({
+    where: { id },
+    include: { session: { include: { classroom: true } } },
+  });
+  if (!a || a.session.classroom.teacherId !== user.id) throw new Error("Forbidden");
+
+  return prisma.assignment.update({
+    where: { id },
+    data: {
+      ...(data.title !== undefined && { title: data.title }),
+      ...(data.description !== undefined && { description: data.description || null }),
+      ...(data.dueAt !== undefined && { dueAt: data.dueAt ? new Date(data.dueAt) : null }),
+      ...(data.maxScore !== undefined && { maxScore: data.maxScore }),
+      ...(data.contentRef !== undefined && { contentRef: data.contentRef }),
+    },
+  });
+}
+
 export async function deleteAssignment(id: string) {
   const supabase = await createClient();
   const {

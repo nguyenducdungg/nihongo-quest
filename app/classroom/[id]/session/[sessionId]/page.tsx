@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { getSessionDetail, updateSessionStatus } from "@/app/actions/session";
 import {
   createAssignment,
+  updateAssignment,
   deleteAssignment,
   getSubmissionsForAssignment,
   AssignmentTypeValue,
@@ -33,6 +34,8 @@ import {
   FileText,
   Wand2,
   PenLine,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import {
   CustomQuizEditor,
@@ -199,8 +202,25 @@ export default function SessionDetailPage({
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [expandedAssignment, setExpandedAssignment] = useState<string | null>(null);
+  const [previewAssignment, setPreviewAssignment] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<Record<string, Submission[]>>({});
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+
+  // Edit assignment state
+  type EditState = {
+    id: string;
+    title: string;
+    description: string;
+    dueAt: string;
+    maxScore: number;
+    contentMode: "preset" | "custom";
+    contentOpts: ContentOptions;
+    customQuizItems: CustomQItem[];
+    customFCards: CustomFCard[];
+    aType: AssignmentTypeValue;
+    saving: boolean;
+  };
+  const [editAssignment, setEditAssignment] = useState<EditState | null>(null);
 
   // Form state
   const [aType, setAType] = useState<AssignmentTypeValue>("QUIZ");
@@ -299,6 +319,80 @@ export default function SessionDetailPage({
   const handleDeleteAssignment = async (assignmentId: string) => {
     if (!confirm("Xóa bài tập này?")) return;
     await deleteAssignment(assignmentId);
+    refresh();
+  };
+
+  const openEditAssignment = (a: NonNullable<SessionDetail>["assignments"][number]) => {
+    const cr = a.contentRef as Record<string, unknown>;
+    const isCustom = !!cr?.isCustom;
+    // Reconstruct preset selections from saved sourceGroups/sourceTopics
+    const savedGroups = (cr?.sourceGroups as string[]) ?? [];
+    const savedTopics = (cr?.sourceTopics as string[]) ?? [];
+    setEditAssignment({
+      id: a.id,
+      aType: a.type as AssignmentTypeValue,
+      title: a.title,
+      description: a.description ?? "",
+      dueAt: a.dueAt ? new Date(a.dueAt).toISOString().slice(0, 16) : "",
+      maxScore: a.maxScore,
+      contentMode: isCustom ? "custom" : "preset",
+      contentOpts: {
+        kanaGroups: savedGroups,
+        vocabTopics: savedTopics,
+        questionCount:
+          (cr?.questions as unknown[])?.length ?? (cr?.cards as unknown[])?.length ?? 10,
+        freeWritePrompt: (cr?.prompt as string) ?? "",
+      },
+      customQuizItems:
+        isCustom && a.type !== "FLASHCARD"
+          ? (
+              (cr?.questions as Array<{
+                id?: string;
+                prompt: string;
+                answer: string;
+                choices: string[];
+              }>) ?? []
+            ).map((q) => {
+              const choices = (q.choices ?? ["", "", "", ""]) as [string, string, string, string];
+              const idx = choices.indexOf(q.answer);
+              return {
+                id: q.id ?? String(Math.random()),
+                prompt: q.prompt,
+                choices,
+                correctIndex: (idx >= 0 ? idx : 0) as 0 | 1 | 2 | 3,
+              };
+            })
+          : [],
+      customFCards: isCustom && a.type === "FLASHCARD" ? ((cr?.cards as CustomFCard[]) ?? []) : [],
+      saving: false,
+    });
+  };
+
+  const handleSaveEditAssignment = async () => {
+    if (!editAssignment) return;
+    setEditAssignment((e) => e && { ...e, saving: true });
+
+    let contentRef: object | undefined;
+    if (editAssignment.contentMode === "custom" && editAssignment.aType !== "FREE_WRITE") {
+      contentRef = buildCustomContentRef(
+        editAssignment.aType,
+        editAssignment.customQuizItems,
+        editAssignment.customFCards
+      );
+    } else if (editAssignment.aType !== "FREE_WRITE") {
+      contentRef = buildContentRef(editAssignment.aType, editAssignment.contentOpts);
+    } else {
+      contentRef = { prompt: editAssignment.contentOpts.freeWritePrompt };
+    }
+
+    await updateAssignment(editAssignment.id, {
+      title: editAssignment.title,
+      description: editAssignment.description || undefined,
+      dueAt: editAssignment.dueAt || null,
+      maxScore: editAssignment.maxScore,
+      contentRef,
+    });
+    setEditAssignment(null);
     refresh();
   };
 
@@ -771,12 +865,31 @@ export default function SessionDetailPage({
                       })()}
                     </div>
                     {isTeacher && (
-                      <button
-                        onClick={() => handleDeleteAssignment(a.id)}
-                        className="shrink-0 text-gray-300 transition-colors hover:text-red-400"
-                      >
-                        <Trash2 size={15} />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button
+                          title="Xem nội dung bài tập"
+                          onClick={() =>
+                            setPreviewAssignment(previewAssignment === a.id ? null : a.id)
+                          }
+                          className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${previewAssignment === a.id ? "bg-[var(--coral-light)] text-[var(--coral)]" : "text-gray-400 hover:bg-[var(--cream)] hover:text-[var(--text-primary)]"}`}
+                        >
+                          {previewAssignment === a.id ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                        <button
+                          title="Chỉnh sửa bài tập"
+                          onClick={() => openEditAssignment(a)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-[var(--cream)] hover:text-[var(--text-primary)]"
+                        >
+                          <PenLine size={14} />
+                        </button>
+                        <button
+                          title="Xóa bài tập"
+                          onClick={() => handleDeleteAssignment(a.id)}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg text-gray-300 transition-colors hover:bg-red-50 hover:text-red-400"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     )}
                   </div>
 
@@ -813,6 +926,13 @@ export default function SessionDetailPage({
                   )}
                 </div>
 
+                {previewAssignment === a.id && (
+                  <AssignmentContentPreview
+                    contentRef={a.contentRef as Record<string, unknown>}
+                    type={a.type}
+                  />
+                )}
+
                 {isExpanded && isTeacher && (
                   <SubmissionsPanel
                     submissions={submissions[a.id] ?? []}
@@ -824,6 +944,269 @@ export default function SessionDetailPage({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Edit assignment bottom sheet */}
+      {editAssignment && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center">
+          <div
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            onClick={() => setEditAssignment(null)}
+          />
+          <div className="animate-slide-up relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white shadow-2xl">
+            {/* Sheet header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-white px-5 py-4">
+              <p className="font-800 text-[var(--text-primary)]">Chỉnh sửa bài tập</p>
+              <button
+                onClick={() => setEditAssignment(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-[var(--text-secondary)] hover:bg-[var(--cream)]"
+              >
+                <EyeOff size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 p-5">
+              {/* Metadata */}
+              <input
+                value={editAssignment.title}
+                onChange={(e) => setEditAssignment((s) => s && { ...s, title: e.target.value })}
+                placeholder="Tiêu đề bài tập"
+                className="font-600 w-full rounded-2xl border-2 border-[var(--border)] px-4 py-3 text-sm transition-colors focus:border-[var(--coral)] focus:outline-none"
+              />
+              <input
+                value={editAssignment.description}
+                onChange={(e) =>
+                  setEditAssignment((s) => s && { ...s, description: e.target.value })
+                }
+                placeholder="Hướng dẫn cho học viên (tùy chọn)"
+                className="font-600 w-full rounded-2xl border-2 border-[var(--border)] px-4 py-3 text-sm transition-colors focus:border-[var(--coral)] focus:outline-none"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-700 mb-1 block text-xs text-[var(--text-secondary)]">
+                    Hạn nộp
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={editAssignment.dueAt}
+                    onChange={(e) => setEditAssignment((s) => s && { ...s, dueAt: e.target.value })}
+                    className="font-600 w-full rounded-2xl border-2 border-[var(--border)] px-3 py-2.5 text-xs focus:border-[var(--coral)] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="font-700 mb-1 block text-xs text-[var(--text-secondary)]">
+                    Điểm tối đa
+                  </label>
+                  <input
+                    type="number"
+                    value={editAssignment.maxScore}
+                    min={1}
+                    max={1000}
+                    onChange={(e) =>
+                      setEditAssignment((s) => s && { ...s, maxScore: Number(e.target.value) })
+                    }
+                    className="font-600 w-full rounded-2xl border-2 border-[var(--border)] px-3 py-2.5 text-sm focus:border-[var(--coral)] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Content section */}
+              {editAssignment.aType !== "FREE_WRITE" && (
+                <>
+                  <div className="flex gap-2 rounded-xl bg-[var(--cream)] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setEditAssignment((s) => s && { ...s, contentMode: "preset" })}
+                      className={`font-700 flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs transition-all ${editAssignment.contentMode === "preset" ? "bg-white text-[var(--coral)] shadow-sm" : "text-[var(--text-secondary)]"}`}
+                    >
+                      <Wand2 size={12} /> Nội dung sẵn có
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditAssignment((s) => s && { ...s, contentMode: "custom" })}
+                      className={`font-700 flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-xs transition-all ${editAssignment.contentMode === "custom" ? "bg-white text-[var(--coral)] shadow-sm" : "text-[var(--text-secondary)]"}`}
+                    >
+                      <PenLine size={12} /> Tự tạo nội dung
+                    </button>
+                  </div>
+
+                  {editAssignment.contentMode === "custom" ? (
+                    <div className="rounded-2xl border-2 border-[var(--coral)]/30 p-3">
+                      {(editAssignment.aType === "QUIZ" ||
+                        editAssignment.aType === "KANA_PRACTICE") && (
+                        <CustomQuizEditor
+                          items={editAssignment.customQuizItems}
+                          onChange={(items) =>
+                            setEditAssignment((s) => s && { ...s, customQuizItems: items })
+                          }
+                        />
+                      )}
+                      {editAssignment.aType === "FLASHCARD" && (
+                        <CustomFlashcardEditor
+                          cards={editAssignment.customFCards}
+                          onChange={(cards) =>
+                            setEditAssignment((s) => s && { ...s, customFCards: cards })
+                          }
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 rounded-2xl border-2 border-[var(--border)] p-3">
+                      <p className="font-800 text-xs text-[var(--text-primary)]">
+                        Chọn nội dung bài tập
+                      </p>
+                      <div>
+                        <p className="font-700 mb-2 text-xs text-[var(--text-secondary)]">
+                          Bảng kana
+                        </p>
+                        <div className="grid max-h-44 gap-1.5 overflow-y-auto pr-1">
+                          {KANA_GROUPS.map((g) => (
+                            <label
+                              key={g.id}
+                              className={`font-600 flex cursor-pointer items-center gap-2.5 rounded-xl border px-3 py-2 text-xs transition-all ${editAssignment.contentOpts.kanaGroups.includes(g.id) ? "font-700 border-[var(--coral)] bg-[var(--coral-light)] text-[var(--coral)]" : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--coral)]/50"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="hidden"
+                                checked={editAssignment.contentOpts.kanaGroups.includes(g.id)}
+                                onChange={() =>
+                                  setEditAssignment((s) => {
+                                    if (!s) return s;
+                                    const kg = s.contentOpts.kanaGroups.includes(g.id)
+                                      ? s.contentOpts.kanaGroups.filter((x) => x !== g.id)
+                                      : [...s.contentOpts.kanaGroups, g.id];
+                                    return {
+                                      ...s,
+                                      contentOpts: { ...s.contentOpts, kanaGroups: kg },
+                                    };
+                                  })
+                                }
+                              />
+                              <span
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${editAssignment.contentOpts.kanaGroups.includes(g.id) ? "border-[var(--coral)] bg-[var(--coral)] text-white" : "border-gray-300"}`}
+                              >
+                                {editAssignment.contentOpts.kanaGroups.includes(g.id) ? "✓" : ""}
+                              </span>
+                              {g.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="font-700 mb-2 text-xs text-[var(--text-secondary)]">
+                          Từ vựng
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {VOCAB_TOPICS.map((t) => (
+                            <label
+                              key={t.id}
+                              className={`font-600 flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-xs transition-all ${editAssignment.contentOpts.vocabTopics.includes(t.id) ? "font-700 border-[var(--mint-dark)] bg-[var(--mint)]/20 text-[var(--mint-dark)]" : "border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--mint-dark)]/50"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="hidden"
+                                checked={editAssignment.contentOpts.vocabTopics.includes(t.id)}
+                                onChange={() =>
+                                  setEditAssignment((s) => {
+                                    if (!s) return s;
+                                    const vt = s.contentOpts.vocabTopics.includes(t.id)
+                                      ? s.contentOpts.vocabTopics.filter((x) => x !== t.id)
+                                      : [...s.contentOpts.vocabTopics, t.id];
+                                    return {
+                                      ...s,
+                                      contentOpts: { ...s.contentOpts, vocabTopics: vt },
+                                    };
+                                  })
+                                }
+                              />
+                              <span
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${editAssignment.contentOpts.vocabTopics.includes(t.id) ? "border-[var(--mint-dark)] bg-[var(--mint-dark)] text-white" : "border-gray-300"}`}
+                              >
+                                {editAssignment.contentOpts.vocabTopics.includes(t.id) ? "✓" : ""}
+                              </span>
+                              {t.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="font-700 mb-1 block text-xs text-[var(--text-secondary)]">
+                          Số câu:{" "}
+                          <span className="text-[var(--coral)]">
+                            {editAssignment.contentOpts.questionCount}
+                          </span>
+                        </label>
+                        <input
+                          type="range"
+                          min={5}
+                          max={30}
+                          step={5}
+                          value={editAssignment.contentOpts.questionCount}
+                          onChange={(e) =>
+                            setEditAssignment(
+                              (s) =>
+                                s && {
+                                  ...s,
+                                  contentOpts: {
+                                    ...s.contentOpts,
+                                    questionCount: Number(e.target.value),
+                                  },
+                                }
+                            )
+                          }
+                          className="w-full accent-[var(--coral)]"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {editAssignment.aType === "FREE_WRITE" && (
+                <div>
+                  <label className="font-700 mb-1 block text-xs text-[var(--text-secondary)]">
+                    Câu hỏi / đề bài
+                  </label>
+                  <textarea
+                    value={editAssignment.contentOpts.freeWritePrompt}
+                    onChange={(e) =>
+                      setEditAssignment(
+                        (s) =>
+                          s && {
+                            ...s,
+                            contentOpts: { ...s.contentOpts, freeWritePrompt: e.target.value },
+                          }
+                      )
+                    }
+                    rows={3}
+                    placeholder="VD: Hãy giới thiệu bản thân bằng tiếng Nhật..."
+                    className="font-600 w-full resize-none rounded-2xl border-2 border-[var(--border)] px-4 py-3 text-sm focus:border-[var(--coral)] focus:outline-none"
+                  />
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setEditAssignment(null)}
+                  className="font-700 rounded-2xl border-2 border-[var(--border)] px-5 py-3 text-sm text-[var(--text-secondary)]"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={handleSaveEditAssignment}
+                  disabled={editAssignment.saving || !editAssignment.title.trim()}
+                  className="font-800 flex flex-1 items-center justify-center gap-2 rounded-2xl border-2 border-[var(--coral-dark)] bg-[var(--coral)] py-3 text-sm text-white disabled:opacity-50"
+                >
+                  {editAssignment.saving ? (
+                    <Loader2 size={15} className="animate-spin" />
+                  ) : (
+                    "Lưu thay đổi"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1104,6 +1487,103 @@ function SubmissionsPanel({
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// ── Assignment Content Preview ───────────────────────────────────
+function AssignmentContentPreview({
+  contentRef,
+  type,
+}: {
+  contentRef: Record<string, unknown>;
+  type: string;
+}) {
+  const questions =
+    (contentRef?.questions as Array<{ prompt: string; answer: string; choices?: string[] }>) ?? [];
+  const cards =
+    (contentRef?.cards as Array<{ front: string; back: string; reading?: string }>) ?? [];
+  const prompt = contentRef?.prompt as string | undefined;
+  const isCustom = !!contentRef?.isCustom;
+
+  return (
+    <div className="space-y-2 border-t-2 border-[var(--border)] bg-[var(--cream)] px-4 py-3">
+      <p className="font-800 flex items-center gap-1 text-xs tracking-wide text-[var(--text-secondary)] uppercase">
+        <Eye size={11} /> Nội dung bài tập{" "}
+        {isCustom && <span className="text-[var(--coral)]">· Tự tạo</span>}
+      </p>
+
+      {/* FREE_WRITE */}
+      {prompt && (
+        <div className="rounded-xl border border-[var(--border)] bg-white p-3">
+          <p className="font-600 text-sm whitespace-pre-wrap text-[var(--text-primary)]">
+            {prompt}
+          </p>
+        </div>
+      )}
+
+      {/* QUIZ / KANA_PRACTICE */}
+      {questions.length > 0 && (
+        <div className="space-y-2">
+          <p className="font-700 text-xs text-[var(--text-secondary)]">
+            {questions.length} câu hỏi
+          </p>
+          {questions.map((q, i) => (
+            <div
+              key={i}
+              className="space-y-1.5 rounded-xl border border-[var(--border)] bg-white px-3 py-2.5"
+            >
+              <p className="font-700 text-sm text-[var(--text-primary)]">
+                {i + 1}. {q.prompt}
+              </p>
+              {q.choices && (
+                <div className="grid grid-cols-2 gap-1">
+                  {q.choices.map((c, ci) => (
+                    <span
+                      key={ci}
+                      className={`font-600 rounded-lg px-2 py-1 text-xs ${c === q.answer ? "font-800 bg-green-100 text-green-700" : "bg-[var(--cream)] text-[var(--text-secondary)]"}`}
+                    >
+                      {c === q.answer ? "✓ " : ""}
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {!q.choices && <p className="font-600 text-xs text-green-700">Đáp án: {q.answer}</p>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* FLASHCARD */}
+      {cards.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="font-700 text-xs text-[var(--text-secondary)]">{cards.length} thẻ</p>
+          {cards.map((c, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-3 rounded-xl border border-[var(--border)] bg-white px-3 py-2.5"
+            >
+              <span className="font-800 kana-text w-12 shrink-0 text-base text-[var(--text-primary)]">
+                {c.front}
+              </span>
+              <span className="text-[var(--border)]">→</span>
+              <div className="min-w-0">
+                <p className="font-700 text-sm text-[var(--text-primary)]">{c.back}</p>
+                {c.reading && (
+                  <p className="font-600 text-xs text-[var(--text-secondary)]">{c.reading}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {questions.length === 0 && cards.length === 0 && !prompt && (
+        <p className="font-600 text-xs text-[var(--text-secondary)]">
+          Không có nội dung để hiển thị.
+        </p>
+      )}
     </div>
   );
 }
