@@ -949,12 +949,12 @@ export default function SessionDetailPage({
 
       {/* Edit assignment bottom sheet */}
       {editAssignment && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setEditAssignment(null)}
           />
-          <div className="animate-slide-up relative flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-3xl bg-white shadow-2xl">
+          <div className="animate-slide-up relative flex max-h-[88vh] w-full max-w-lg flex-col rounded-3xl bg-white shadow-2xl">
             {/* Sheet header */}
             <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
               <p className="font-800 text-[var(--text-primary)]">Chỉnh sửa bài tập</p>
