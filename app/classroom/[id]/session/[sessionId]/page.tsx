@@ -954,9 +954,9 @@ export default function SessionDetailPage({
             className="absolute inset-0 bg-black/40 backdrop-blur-sm"
             onClick={() => setEditAssignment(null)}
           />
-          <div className="animate-slide-up relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-3xl bg-white shadow-2xl">
+          <div className="animate-slide-up relative flex max-h-[88vh] w-full max-w-lg flex-col rounded-t-3xl bg-white shadow-2xl">
             {/* Sheet header */}
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-[var(--border)] bg-white px-5 py-4">
+            <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-4">
               <p className="font-800 text-[var(--text-primary)]">Chỉnh sửa bài tập</p>
               <button
                 onClick={() => setEditAssignment(null)}
@@ -966,6 +966,7 @@ export default function SessionDetailPage({
               </button>
             </div>
 
+            <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="space-y-4 p-5">
               {/* Metadata */}
               <input
@@ -1186,7 +1187,12 @@ export default function SessionDetailPage({
                 </div>
               )}
 
-              <div className="flex gap-2 pt-1">
+            </div>
+            </div>
+
+            {/* Sticky footer */}
+            <div className="shrink-0 border-t border-[var(--border)] bg-white px-5 py-4">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setEditAssignment(null)}
                   className="font-700 rounded-2xl border-2 border-[var(--border)] px-5 py-3 text-sm text-[var(--text-secondary)]"
